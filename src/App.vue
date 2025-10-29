@@ -343,6 +343,8 @@ main {
   .app-footer {
     font-size: 0.8rem;
     margin-top: 1.5rem;
+    text-align: center; /* Ensure footer text stays centered */
+    width: 100%; /* Ensure footer takes full width */
   }
   main {
     align-items: flex-start; /* Align calculator to top on mobile */
