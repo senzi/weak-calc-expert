@@ -1,5 +1,10 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { rateLimitConfig } from './rateLimitConfig';
+
+// --- Token Bucket State ---
+const tokens = ref(rateLimitConfig.initialTokens);
+const isRateLimited = ref(false);
 
 // --- Enums for State Management ---
 const STATUS = {
@@ -30,6 +35,9 @@ const displayExpression = computed(() => {
 });
 
 const displayResult = computed(() => {
+  if (isRateLimited.value) {
+    return rateLimitConfig.busyText;
+  }
   switch (status.value) {
     case STATUS.LOADING:
       return uiText.loading;
@@ -43,7 +51,19 @@ const displayResult = computed(() => {
 });
 
 const isLoading = computed(() => status.value === STATUS.LOADING);
+const isEqualsDisabled = computed(() => status.value === STATUS.LOADING || isRateLimited.value);
 const canInput = computed(() => status.value !== STATUS.LOADING);
+
+// --- Token Bucket Logic ---
+onMounted(() => {
+  // Refill tokens periodically
+  const refillInterval = 60000 / rateLimitConfig.refillRate;
+  setInterval(() => {
+    if (tokens.value < rateLimitConfig.maxTokens) {
+      tokens.value = Math.min(tokens.value + 1, rateLimitConfig.maxTokens);
+    }
+  }, refillInterval);
+});
 
 // --- Audio Handling ---
 const playSound = (soundPath, force = false) => {
@@ -111,7 +131,27 @@ const clear = () => {
 
 // --- Calculation Logic ---
 const handleEquals = async () => {
-  if (expression.value.length === 0) return;
+  if (expression.value.length === 0 || isEqualsDisabled.value) return;
+
+  // 1. Check token bucket
+  if (tokens.value < rateLimitConfig.consumePerCall) {
+    isRateLimited.value = true;
+    status.value = STATUS.EDITING; // Keep editing state
+    resultText.value = rateLimitConfig.busyText; // Show busy text
+    playSound(rateLimitConfig.busySound, true);
+
+    setTimeout(() => {
+      isRateLimited.value = false;
+      if (status.value !== STATUS.RESULT && status.value !== STATUS.FAILED) {
+         resultText.value = '';
+      }
+    }, rateLimitConfig.cooldownOnEmpty);
+    return;
+  }
+
+  // 2. Consume token and proceed
+  playSound('/sfx/keys/key_eq.mp3');
+  tokens.value -= rateLimitConfig.consumePerCall;
 
   // --- Expert Calculation (Backend) ---
   // No more pre-calculation, send directly to LLM.
@@ -182,6 +222,12 @@ const buttons = [
 ];
 
 const handleButtonClick = (btn) => {
+  if (btn.key === 'equals') {
+    // Sound is handled within handleEquals to respect rate limiting
+    btn.action();
+    return;
+  }
+
   if (!canInput.value && btn.key !== 'clear') {
     return;
   }
@@ -207,19 +253,22 @@ const handleButtonClick = (btn) => {
       <button
         v-for="btn in buttons"
         :key="btn.key"
-        :class="['btn', btn.class]"
+        :class="['btn', btn.class, { 'is-loading': btn.key === 'equals' && isLoading }]"
         :style="{ gridArea: btn.key }"
         @click="handleButtonClick(btn)"
-        :disabled="!canInput && btn.key !== 'clear'"
+        :disabled="(btn.key === 'equals' ? isEqualsDisabled : !canInput) && btn.key !== 'clear'"
       >
-        {{ btn.label }}
+        <div v-if="btn.key === 'equals' && isLoading" class="loader-small"></div>
+        <span v-else>{{ btn.label }}</span>
       </button>
       </div>
     </div>
-    </main>
     <footer class="app-footer">
+      <a href="https://calc.closeai.moe" target="_blank" rel="noopener noreferrer">calc.closeai.moe</a>
+      <br>
       <a href="https://github.com/senzi/weak-calc-expert" target="_blank" rel="noopener noreferrer">Github</a> · MIT · vibe coding
     </footer>
+    </main>
   </div>
 </template>
 
@@ -233,16 +282,17 @@ const handleButtonClick = (btn) => {
 main {
   flex: 1 0 auto;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
 }
 
 .app-footer {
-  flex-shrink: 0;
   text-align: center;
-  padding: 20px;
+  margin-top: 1.5rem;
   font-size: 0.9rem;
   color: #888;
+  line-height: 1.6;
 }
 
 .app-footer a {
@@ -257,11 +307,31 @@ main {
 @media (max-width: 480px) {
   .app-footer {
     font-size: 0.8rem;
-    padding: 15px;
+    margin-top: 1.5rem;
   }
   main {
     align-items: flex-start; /* Align calculator to top on mobile */
     padding-top: 2rem;
+  }
+}
+
+.loader-small {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #fff;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  box-sizing: border-box;
+  animation: rotation 1s linear infinite;
+}
+
+@keyframes rotation {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
   }
 }
 </style>
