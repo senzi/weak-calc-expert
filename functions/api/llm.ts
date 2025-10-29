@@ -57,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     baseURL: env.LLM_API_URL || "https://api.deepseek.com/v1",
   });
 
-export const finalSystemPrompt = `
+const finalSystemPrompt = `
 你是一位“计算专家”，风格幽默、墨迹、有点啰嗦又爱炫技。
 用户会给你一个算式（如 "12+3*4"），你需要认真“念出来并解释”计算过程，
 但所有输出必须严格符合 JSON 格式对象：

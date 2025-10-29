@@ -192,7 +192,9 @@ const handleButtonClick = (btn) => {
 </script>
 
 <template>
-  <div class="calculator">
+  <div class="app-wrapper">
+    <main>
+      <div class="calculator">
     <div class="display">
       <div class="expression">{{ displayExpression }}</div>
       <div class="result">
@@ -212,6 +214,54 @@ const handleButtonClick = (btn) => {
       >
         {{ btn.label }}
       </button>
+      </div>
     </div>
+    </main>
+    <footer class="app-footer">
+      <a href="https://github.com/senzi/weak-calc-expert" target="_blank" rel="noopener noreferrer">Github</a> · MIT · vibe coding
+    </footer>
   </div>
 </template>
+
+<style>
+.app-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.app-footer {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 20px;
+  font-size: 0.9rem;
+  color: #888;
+}
+
+.app-footer a {
+  color: #888;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .app-footer {
+    font-size: 0.8rem;
+    padding: 15px;
+  }
+  main {
+    align-items: flex-start; /* Align calculator to top on mobile */
+    padding-top: 2rem;
+  }
+}
+</style>
