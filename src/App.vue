@@ -21,6 +21,7 @@ const resultText = ref('');
 const audioUrl = ref('');
 const status = ref(STATUS.IDLE);
 const lastSoundPlayTime = ref(0);
+const audioCache = ref({});
 
 // --- UI Text & Messages ---
 const uiText = {
@@ -54,8 +55,20 @@ const isLoading = computed(() => status.value === STATUS.LOADING);
 const isEqualsDisabled = computed(() => status.value === STATUS.LOADING || isRateLimited.value);
 const canInput = computed(() => status.value !== STATUS.LOADING);
 
-// --- Token Bucket Logic ---
-onMounted(() => {
+// --- Audio Preloading Helper ---
+const preloadAudio = (url) => {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio(url);
+    audio.addEventListener('canplaythrough', () => resolve(audio), { once: true });
+    audio.addEventListener('error', () => reject(new Error(`Failed to load audio: ${url}`)), { once: true });
+    // A timeout in case 'canplaythrough' never fires
+    setTimeout(() => reject(new Error(`Timeout loading audio: ${url}`)), 5000);
+    audio.load();
+  });
+};
+
+// --- Token Bucket Logic & Sound Preloading ---
+onMounted(async () => {
   // Refill tokens periodically
   const refillInterval = 60000 / rateLimitConfig.refillRate;
   setInterval(() => {
@@ -63,6 +76,29 @@ onMounted(() => {
       tokens.value = Math.min(tokens.value + 1, rateLimitConfig.maxTokens);
     }
   }, refillInterval);
+
+  // Preload all sounds for instant feedback
+  console.log('Starting audio preload...');
+  const soundPaths = [
+    ...new Set(buttons.map(btn => btn.sound).filter(Boolean)),
+    rateLimitConfig.busySound,
+    '/sfx/expert_failed.mp3',
+    '/sfx/keys/key_press.mp3' // Generic fallback
+  ];
+
+  const preloadPromises = soundPaths.map(path => {
+    if (!path) return Promise.resolve();
+    return preloadAudio(path)
+      .then(audio => {
+        audioCache.value[path] = audio;
+      })
+      .catch(error => {
+        console.warn(error.message); // Use warn to avoid console errors for non-critical failures
+      });
+  });
+
+  await Promise.all(preloadPromises);
+  console.log('Audio preload finished.');
 });
 
 // --- Audio Handling ---
@@ -73,22 +109,21 @@ const playSound = (soundPath, force = false) => {
   }
   lastSoundPlayTime.value = now;
 
-  const audio = new Audio(soundPath);
-  audio.onerror = () => {
-    // If specific sound fails, play the generic fallback sound.
-    if (soundPath !== '/sfx/keys/key_press.mp3') {
-      console.warn(`Sound file not found: ${soundPath}. Using fallback.`);
-      const fallbackAudio = new Audio('/sfx/keys/key_press.mp3');
+  const audio = audioCache.value[soundPath];
+  if (audio) {
+    audio.currentTime = 0; // Rewind to start for re-play
+    audio.play().catch(err => console.error(`Failed to play sound from cache: ${soundPath}`, err));
+  } else {
+    // Fallback if a sound wasn't preloaded or is missing
+    const fallbackAudio = audioCache.value['/sfx/keys/key_press.mp3'];
+    if (fallbackAudio) {
+      console.warn(`Sound not in cache: ${soundPath}. Using fallback.`);
+      fallbackAudio.currentTime = 0;
       fallbackAudio.play().catch(err => console.error('Fallback sound failed to play.', err));
     } else {
-      console.error('Fallback sound file /sfx/keys/key_press.mp3 is missing.');
+      console.error('Critical: Fallback sound is not available in cache.');
     }
-  };
-  audio.play().catch(err => {
-    // This catch is for play() rejections (e.g., user interaction needed),
-    // while onerror handles loading failures.
-    console.error(`Failed to play sound: ${soundPath}`, err);
-  });
+  }
 };
 
 // --- Input Handling ---
