@@ -46,6 +46,18 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return jsonError("MISSING_EXPRESSION", 400, trace_id);
   }
 
+  // 验证表达式是否只包含键盘上的字符
+  const validKeyboardChars = /^[0-9+\-*/().\s]+$/;
+  if (!validKeyboardChars.test(expr)) {
+    return new Response(JSON.stringify({
+      explanation: " ",
+      display: "Error"
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const apiKey = env.LLM_API_KEY;
   if (!apiKey) {
     console.error("LLM_API_KEY environment variable not set.");
